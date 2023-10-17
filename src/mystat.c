@@ -170,7 +170,7 @@ main(int argc, char *argv[])
       printf("     st_size=%ld st_blocks=%ld st_blksize=%ld\n",
                  sb.st_size, sb.st_blocks, sb.st_blksize);
 #else
-      printf("     st_size=%ld st_blocks=%ld st_blksize=%ld\n",
+      printf("     st_size=%ld st_blocks=%ld st_blksize=%d\n",
                  sb.st_size, sb.st_blocks, sb.st_blksize);
 #endif
       printf("     st_dev=%lu st_rdev=%lu st_ino=%s st_gen=%s\n",
