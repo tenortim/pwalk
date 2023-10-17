@@ -10,6 +10,8 @@
 //	- Consider changing ACL4 in-memory representation to use dynamic memory linked-list representation
 //	- Refine 'BSD' output to show results more like what OneFS produces
 
+#define _GNU_SOURCE
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -294,7 +296,7 @@ pw_acl4_fprintf_chex(acl4_t *acl4p, const char *path, stat_t *sb_p, FILE *stream
     // Output path semi-ls-l-like ...
     if (path && path[0]) {
         format_mode_bits(mode_s, sb_p->st_mode);
-        fprintf(stream, "%s %d %3d %3d %6lld %s\n",
+        fprintf(stream, "%s %lu %3d %3d %6ld %s\n",
                 mode_s, sb_p->st_nlink, sb_p->st_uid, sb_p->st_gid, sb_p->st_size, path);
     }
 
@@ -511,7 +513,7 @@ pw_acl4_fprintf_onefs(acl4_t *acl4p, const char *path, struct stat *sb_p, int ch
             fprintf(stream, "chmod -E \"%s\" <<END\n", path);
         } else {		// Output path semi-ls-l-like ...
             format_mode_bits(mode_s, sb_p->st_mode);
-            fprintf(stream, "%s + %d %3d %3d %6lld %s\n",
+            fprintf(stream, "%s + %lu %3d %3d %6ld %s\n",
                 mode_s, sb_p->st_nlink, sb_p->st_uid, sb_p->st_gid, sb_p->st_size, path);
         }
     }
@@ -557,7 +559,7 @@ pw_acl4_fprintf_onefs(acl4_t *acl4p, const char *path, struct stat *sb_p, int ch
 // pw_acl_sort_ace_value() - Used to assign a sort weighting value to an ACE4.
 
 static int
-pw_acl_sort_ace_value(ace4_t *ace4p)
+pw_acl_sort_ace_value(const ace4_t *ace4p)
 {
     int dacl;
 
@@ -598,10 +600,10 @@ pw_acl_sort_ace_value(ace4_t *ace4p)
 // pw_acl_sort_f() - Used for canonicalization qsort() call.
 
 static int
-pw_acl_sort_f(ace4_t *ace1p, ace4_t *ace2p, void *arg)
+pw_acl_sort_f(const void *ace1p, const void *ace2p, void *arg)
 {
 
-    return (pw_acl_sort_ace_value(ace1p) - pw_acl_sort_ace_value(ace2p));
+    return (pw_acl_sort_ace_value((const ace4_t *) ace1p) - pw_acl_sort_ace_value((const ace4_t *) ace2p));
 }
 
 // pw_acl4_canonicalize() - Exposed as an external entry.
@@ -611,7 +613,7 @@ pw_acl4_canonicalize(acl4_t *acl4)
 {
     void *arg;
 
-    qsort_r(acl4->ace4, acl4->n_aces, sizeof(ace4_t), pw_acl_sort_f, &arg);
+    qsort_r((void *) acl4->ace4, (size_t) acl4->n_aces, sizeof(ace4_t), pw_acl_sort_f, &arg);
 }
 
 // zeropad() - fill out passed field with NUL bytes after 1st NUL byte

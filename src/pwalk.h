@@ -246,6 +246,7 @@ typedef struct {
    count_64 READONLY_Opens;			// READONLY file opens
    count_64 READONLY_Errors;			// READONLY open/read errors
    count_64 READONLY_CRC_Bytes;			// READONLY CRC bytes read
+   count_64 READONLY_MD5_Bytes;        // READONLY MD5 bytes read
    count_64 READONLY_DENIST_Bytes;		// READONLY DENIST bytes read
    count_64 NPythonCalls;			// Python calls
    count_64 NPythonErrors;			// Python errors

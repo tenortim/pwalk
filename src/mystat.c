@@ -1,3 +1,7 @@
+#ifdef __LINUX__
+#define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +42,7 @@ ctime_extended(struct timespec *ts, char *ubuf)
    // On some systems, the year must be in the range -999 to 9999. On others, larger year
    // values may be returned.
    if (ctime_r((time_t *) &ts->tv_sec, rbuf) != NULL) {
-       *(index(rbuf, '\n')) = '\0';
+       *(strchr(rbuf, '\n')) = '\0';
    } else {
        strcpy(rbuf, "?");
        // Large or negative values not formatted by ctime() SHOULD be VERY LARGE ...
@@ -160,11 +164,11 @@ main(int argc, char *argv[])
 
       // Output ...
       printf("%s:\n", filename);
-      printf("     st_mode=%07o st_nlink=%d st_uid=%d st_gid=%d\n",
+      printf("     st_mode=%07o st_nlink=%lu st_uid=%d st_gid=%d\n",
                 sb.st_mode, sb.st_nlink, sb.st_uid, sb.st_gid);
-      printf("     st_size=%lld st_blocks=%llu st_blksize=%d\n",
+      printf("     st_size=%ld st_blocks=%ld st_blksize=%ld\n",
                  sb.st_size, sb.st_blocks, sb.st_blksize);
-      printf("     st_dev=%d st_rdev=%d st_ino=%s st_gen=%s\n",
+      printf("     st_dev=%lu st_rdev=%lu st_ino=%s st_gen=%s\n",
 		sb.st_dev, sb.st_rdev, onefs_inode_str(sb.st_ino), st_gen_str);
       printf("     st_flags=%s", st_flags_str);
 #if defined(__LINUX__)
@@ -177,7 +181,7 @@ main(int argc, char *argv[])
    	sb.st_atim.tv_sec, sb.st_atim.tv_nsec, sb.st_atim.tv_sec, atime_str,
    	sb.st_mtim.tv_sec, sb.st_mtim.tv_nsec, sb.st_mtim.tv_sec, mtime_str,
    	sb.st_ctim.tv_sec, sb.st_ctim.tv_nsec, sb.st_ctim.tv_sec, ctime_str,
-   	0L, 0, 0, btime_str);
+   	0L, 0UL, 0L, btime_str);
 #else
    	sb.st_atimespec.tv_sec, sb.st_atimespec.tv_nsec, sb.st_atimespec.tv_sec, atime_str,
    	sb.st_mtimespec.tv_sec, sb.st_mtimespec.tv_nsec, sb.st_mtimespec.tv_sec, mtime_str,

@@ -1,8 +1,17 @@
 #ifndef PWALK_SUMS_H
 #define PWALK_SUMS_H 1
 
-size_t crc32(int fd, char *rbuf, int rbuf_size, unsigned *crc_val);
-unsigned short crc16(const unsigned char *data_p, int length);
+#include <stdbool.h>
+#include <stddef.h>
+
+struct checksum {
+    int crc_enabled;
+    char *crc_str;
+    int md5_enabled;
+    char *md5_str;
+};
+
+size_t pwalk_hash(int fd, char *rbuf, int rbuf_size, struct checksum *checksums);
 
 #define MD5_SUM_ZERO "d41d8cd98f00b204e9800998ecf8427e"
 #define SHA1_SUM_ZERO "da39a3ee5e6b4b0d3255bfef95601890afd80709"

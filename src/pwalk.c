@@ -108,6 +108,12 @@
 #define _LARGEFILE64_SOURCE
 #endif
 
+#ifdef LINUX
+#define _GNU_SOURCE
+#define _FILE_OFFSET_BITS 64
+#include <features.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -128,6 +134,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <errno.h>
+#include <sys/fcntl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/param.h>
@@ -471,7 +478,7 @@ usage(void)
    printf("	-pmode			// suppress showing formatted mode bits (with -ls and -xml)\n");
    printf("	+acls			// show ACL info in some outputs, eg: '+' with -ls\n");
    printf("	+crc			// show CRC for each file (READS ALL FILES!)\n");
-   printf("	+md5  (COMING SOON!)	// show MD5 for each file (READS ALL FILES!)\n");
+   printf("	+md5        	// show MD5 for each file (READS ALL FILES!)\n");
    printf("	+tstat			// show hi-res timing statistics in some outputs\n");
    printf("   File selection <option> values are implicitly AND'ed together:\n");
    printf("	+span			// include directories that span filesystems (OFF by default)\n");
@@ -1255,7 +1262,7 @@ setup_root_path(char **dirpath_p, int *dfd_out, ino_t *inode_out)
    assert (fstat(dfd, &st) == 0);
    if (dfd_out) *dfd_out = dfd;
    if (inode_out) *inode_out = st.st_ino;
-   if (PWdebug) fprintf(Plog, "DEBUG: setup_root_path(\"%s\") inode=%lld\n", dirpath, st.st_ino);
+   if (PWdebug) fprintf(Plog, "DEBUG: setup_root_path(\"%s\") inode=%lu\n", dirpath, st.st_ino);
 }
 
 // @@@ Parser for -pfile= contents @@@
@@ -1531,16 +1538,16 @@ bad_timespec(struct timespec * tsp)
 void
 printf_stat(struct stat *sb)
 {
-   printf("     st_dev=%d\n", sb->st_dev);
-   printf("     st_ino=%llu\n", sb->st_ino);
+   printf("     st_dev=%lu\n", sb->st_dev);
+   printf("     st_ino=%lu\n", sb->st_ino);
    printf("    st_mode=%07o\n", sb->st_mode);
-   printf("   st_nlink=%d\n", sb->st_nlink);
+   printf("   st_nlink=%lu\n", sb->st_nlink);
    printf("     st_uid=%d\n", sb->st_uid);
    printf("     st_gid=%d\n", sb->st_gid);
-   printf("    st_rdev=%d\n", sb->st_rdev);
-   printf("    st_size=%lld\n", sb->st_size);
-   printf(" st_blksize=%d\n", sb->st_blksize);
-   printf("  st_blocks=%llu\n", sb->st_blocks);
+   printf("    st_rdev=%lu\n", sb->st_rdev);
+   printf("    st_size=%ld\n", sb->st_size);
+   printf(" st_blksize=%ld\n", sb->st_blksize);
+   printf("  st_blocks=%ld\n", sb->st_blocks);
 #if !defined(__LINUX__)
    printf("   st_flags=%o\n", sb->st_flags);
 #endif
@@ -2038,7 +2045,7 @@ void
 pwalk_tally_output()
 {
    FILE *TALLY;
-   char ofile[MAX_PATHLEN+2];
+   char ofile[MAX_PATHLEN+2+15];
    char *relop;
    int i, w_id;
 
@@ -2702,7 +2709,7 @@ redact_path(char *relpath_redacted, char *relpath, ino_t relpath_inode, int w_id
    // Output into our relpath_redacted a concatenation of the inode numbers ...
    p = relpath_redacted;
    for (i=0; i<=np; i++) {
-      p += sprintf(p, "%s%llx", (np && i>0 ? "/" : ""), inode[i]);
+      p += sprintf(p, "%s%lx", (np && i>0 ? "/" : ""), inode[i]);
       assert ((p - relpath_redacted) < (MAX_PATHLEN - 18));			// klooge: crude
    }
    *p = '\0';
@@ -2778,10 +2785,8 @@ directory_scan(int w_id)		// CAUTION: MT-safe and RE-ENTRANT!
    char cmp_file_result_str[32];	// Concatenation of -cmp letter codes ('[-ET]' or '[MFogsSambC]*') for file
    int cmp_dir_reported = FALSE;	// Set when directory cmp line has been reported
    // Locals ...
-   unsigned crc_val;			// +crc results
-   char crc_str[16];			// ... formatted as hex
-   unsigned long md5_val;		// +md5 results
-   char md5_str[32];			// ... formatted as hex
+   struct checksum checksums; // all checksums
+   char checksum_str[1024];   // string representation
    long long t0, t1, t2;		// For high-resolution timing samples
    long long ns_stat, ns_getacl;	// ns for stat() and get ACL calls
    char ns_stat_s[32], ns_getacl_s[32];	// Formatted timing values
@@ -2794,11 +2799,11 @@ directory_scan(int w_id)		// CAUTION: MT-safe and RE-ENTRANT!
    char RelPathName[MAX_PATHLEN+1];	// Relative pathname (relative to source/target relative roots)
    char AbsPathName[MAX_PATHLEN+1];	// Absolute pathname (value prepended by AbsPathDir)
 
-   unsigned char rbuf[128*1024];	// READONLY buffer for +crc and +denist (cheap, on-stack, should be dynamic)
+   unsigned char rbuf[128*1024];	// READONLY buffer for +crc, +md5 and +denist (cheap, on-stack, should be dynamic)
    size_t nbytes;			// READONLY bytes read
 
    PWALK_STATS_T DS;			// Per-directory counters
-   char emsg[MAX_PATHLEN+256];
+   char emsg[MAX_PATHLEN+256+34];
    char rc_msg[64] = "";
    // void *directory_acl = NULL;		// For +rm_acls functionality #####
 
@@ -3029,7 +3034,7 @@ dirent_read_meta: // @@@ GATHER/dirent: stat/fstatat() info ...
          have_stat = 1;
 
          // Redaction ...
-         if (Opt_REDACT) sprintf(RedactedFileName, "%llx", dirent_sb.st_ino);
+         if (Opt_REDACT) sprintf(RedactedFileName, "%lx", dirent_sb.st_ino);
          format_mode_bits(mode_str, dirent_sb.st_mode);
 
          // Make up for these bits not always being set correctly (eg: over NFS) ...
@@ -3081,6 +3086,7 @@ dirent_read_meta: // @@@ GATHER/dirent: stat/fstatat() info ...
                WS[w_id]->NWarnings += 1;
                sprintf(emsg, "WARNING: In \"%s\", cannot -rm \"%s\" (%s)\n",
                   RelPathName, FileName, errstr);
+               LogMsg(emsg, 1);
                sprintf(rm_rc_str, "%d", rc);
             } else {
                WS[w_id]->NRemoved += 1;			// Successful -rm
@@ -3184,7 +3190,6 @@ dirent_read_meta: // @@@ GATHER/dirent: stat/fstatat() info ...
       // ... For OneFS +rm_acls  we must open each file|dir to get&set its security_descriptor.
       // ... For +crc, +md5, and +denist, we must only open each non-zero-length ordinary file.
       openit = (Cmd_RM_ACLS || (PWget_MASK & PWget_SD));			// MUST open!
-      crc_val = md5_val = 0;
       if ((dirent_type == DT_REG) && (Cmd_DENIST || P_CRC32 || P_MD5)) {	// MIGHT open ...
          if (dirent_sb.st_size == 0) WS[w_id]->READONLY_Zero_Files += 1;
          else openit = 1;
@@ -3210,7 +3215,9 @@ dirent_read_meta: // @@@ GATHER/dirent: stat/fstatat() info ...
       }
 
       if (P_CRC32 || P_MD5) {		// klooge: need f() to do CRC32 and MD5 in single pass!
-         nbytes = crc32(fd, (void *) rbuf, sizeof(rbuf), &crc_val);
+         checksums.crc_enabled = P_CRC32;
+         checksums.md5_enabled = P_MD5;
+         nbytes = pwalk_hash(fd, (void *) rbuf, sizeof(rbuf), &checksums);
          if (nbytes > 0) WS[w_id]->READONLY_CRC_Bytes += nbytes;
          // Cross-check that we read all bytes of the file ...
          // ==== if (nbytes != dirent_sb.st_size) WS[w_id]->READONLY_Errors += 1;	// === Add error!
@@ -3246,7 +3253,20 @@ dirent_meta_munge: // @@@
       // NOTE: ns_getacl_s will be empty string unless '+pstat' option is used
 
       // NOTE: crc_str will be empty if +crc not specified
-      if (P_CRC32) sprintf(crc_str, " crc=0x%x", crc_val); else crc_str[0] = '\0';
+      int length = 0;
+      checksum_str[0] = '\0';
+      if (openit) {  // checksums only apply to files, not directories etc.
+         if (P_CRC32) {
+            length += snprintf(checksum_str + length, 1024 - length, " crc=0x%s", checksums.crc_str);
+            free(checksums.crc_str);
+            checksums.crc_str = NULL;
+         }
+         if (P_MD5) {
+            length += snprintf(checksum_str + length, 1024 - length, " md5=%s", checksums.md5_str);
+            free(checksums.md5_str);
+            checksums.md5_str = NULL;
+         }
+      }
 
 #if defined(BIRTHTIME_CODE)
       // ... EXPERIMENTAL; on OneFS only (NFS clients may not convey birthtime or get it right!)
@@ -3273,7 +3293,7 @@ dirent_meta_munge: // @@@
             if (w_id || ftell(WLOG)) fprintf(WLOG, "\n");
             fprintf(WLOG, "@ %s\n", REDACT_RelPathDir);
          } else if (Cmd_XML) {
-            fprintf(WLOG, "<directory>\n<path> %lld%s%s %u %lld %s%s </path>\n",
+            fprintf(WLOG, "<directory>\n<path> %ld%s%s %lu %lld %s%s </path>\n",
                bytes_physical, (Opt_PMODE ? " " : ""), mode_str, curdir_sb.st_nlink,
                (long long) curdir_sb.st_size, REDACT_RelPathDir, ns_stat_s);
          }
@@ -3283,28 +3303,28 @@ dirent_meta_munge: // @@@
       // @@@ OUTPUT/dirent: Mutually-exclusive primary modes ...
       if (Cmd_LS) {			// -ls
          if (SELECT_OPTIONS&SELECT_FAKE) {		// Include uid and gid in output ...
-            fprintf(WLOG, "%s %u %u %u %lld %s%s%s\n",
+            fprintf(WLOG, "%s %lu %u %u %lld %s%s%s\n",
                     (Opt_PMODE ? mode_str : ""), dirent_sb.st_nlink,
                     dirent_sb.st_uid, dirent_sb.st_gid,
-                    (long long) dirent_sb.st_size, REDACT_FileName, ns_stat_s, crc_str);
+                    (long long) dirent_sb.st_size, REDACT_FileName, ns_stat_s, checksum_str);
          } else if (SELECT_OPTIONS&SELECT_SPARSE) {	// Include physical size (1k blocks) in the output ...
             // If ST_BLOCK_SIZE is 512, normalize to 1K units, rounding up ...
-            fprintf(WLOG, "%lld %s %u %lld %s%s%s\n",
+            fprintf(WLOG, "%ld %s %lu %lld %s%s%s\n",
                     (ST_BLOCK_SIZE == 1024) ? dirent_sb.st_blocks : (dirent_sb.st_blocks+1)/2,
                     (Opt_PMODE ? mode_str : ""), dirent_sb.st_nlink,
-                    (long long) dirent_sb.st_size, REDACT_FileName, ns_stat_s, crc_str);
+                    (long long) dirent_sb.st_size, REDACT_FileName, ns_stat_s, checksum_str);
          } else {
-            fprintf(WLOG, "%s %u %lld %s%s%s\n",
+            fprintf(WLOG, "%s %lu %lld %s%s%s\n",
                     (Opt_PMODE ? mode_str : ""), dirent_sb.st_nlink,
-                    (long long) dirent_sb.st_size, REDACT_FileName, ns_stat_s, crc_str);
+                    (long long) dirent_sb.st_size, REDACT_FileName, ns_stat_s, checksum_str);
          }
       } else if (Cmd_LSC) {		// -lsc
          fprintf(WLOG, "%c %s\n", mode_str[0], REDACT_FileName);
       } else if (Cmd_LSF) {		// -lsf
          fprintf(WLOG, "%c %s\n", mode_str[0], RelPathName);
       } else if (Cmd_XML) {		// -xml
-         fprintf(WLOG, "<file> %s %u %lld %s%s%s </file>\n",
-            (Opt_PMODE ? mode_str : ""), dirent_sb.st_nlink, (long long) dirent_sb.st_size, REDACT_FileName, ns_stat_s, crc_str);
+         fprintf(WLOG, "<file> %s %lu %lld %s%s%s </file>\n",
+            (Opt_PMODE ? mode_str : ""), dirent_sb.st_nlink, (long long) dirent_sb.st_size, REDACT_FileName, ns_stat_s, checksum_str);
       } else if (Cmd_CMP) {		// -cmp
          if (cmp_target_dir_exists)
             cmp_source_target(w_id, RelPathName, &dirent_sb, cmp_file_result_str);
@@ -3394,7 +3414,7 @@ dir_summary:
             if (w_id || ftell(WLOG)) fprintf(WLOG, "\n");
             fprintf(WLOG, "@ %s\n", REDACT_RelPathDir);
          } else if (Cmd_XML) {
-            fprintf(WLOG, "<directory>\n<path> %lld%s%s %u %lld %s%s </path>\n",
+            fprintf(WLOG, "<directory>\n<path> %ld%s%s %lu %lld %s%s </path>\n",
                bytes_physical, (Opt_PMODE ? " " : ""), mode_str, curdir_sb.st_nlink,
                (long long) curdir_sb.st_size, REDACT_RelPathDir, ns_stat_s);
          }
@@ -3404,11 +3424,11 @@ dir_summary:
       // @@@ OUTPUT/directory_exit: End-of-directory output ...
       if ((SELECT_OPTIONS == 0) || (SELECT_OPTIONS && n_dirent_selected > 0)) {
          if (Cmd_XML) {
-            fprintf(WLOG, "<summary> f=%llu d=%llu s=%llu o=%llu errs=%llu lsize=%lld psize=%llu </summary>\n",
+            fprintf(WLOG, "<summary> f=%llu d=%llu s=%llu o=%llu errs=%llu lsize=%ld psize=%ld </summary>\n",
                DS.NFiles, DS.NDirs, DS.NSymlinks, DS.NOthers, DS.NStatErrs, DS.NBytesLogical, DS.NBytesPhysical);
             fprintf(WLOG, "</directory>\n");
          } else if (Cmd_LS || Cmd_LSC || Cmd_LSD || Cmd_LSF) {
-            fprintf(WLOG, "S: f=%llu d=%llu s=%lld o=%llu z=%llu lsize=%llu psize=%llu errs=%llu\n",
+            fprintf(WLOG, "S: f=%llu d=%llu s=%lld o=%llu z=%llu lsize=%ld psize=%ld errs=%llu\n",
                DS.NFiles, DS.NDirs, DS.NSymlinks, DS.NOthers,
                DS.NZeroFiles, DS.NBytesLogical, DS.NBytesPhysical, DS.NStatErrs);
          } else if (Cmd_RM && DS.NRemoved) {
@@ -3465,7 +3485,7 @@ check_maxfiles(void)
 
    // Can we get enough?
    if (MAX_OPEN_FILES > rlimit.rlim_max) {		// No way!
-      fprintf(Plog, "ERROR: MAX_OPEN_FILES (%d) > RLIMIT_NOFILE rlim_max (%llu)\n",
+      fprintf(Plog, "ERROR: MAX_OPEN_FILES (%d) > RLIMIT_NOFILE rlim_max (%lu)\n",
          MAX_OPEN_FILES, rlimit.rlim_max);
       exit(-1);
    }
@@ -3656,6 +3676,8 @@ process_arglist(int argc, char *argv[])
          P_ACL_P = TRUE;
       } else if (strcmp(arg, "+crc") == 0) {		// Tag-along modes ...
          P_CRC32 = 1;
+      } else if (strcmp(arg, "+md5") == 0) {
+         P_MD5 = 1;
       } else if (strcmp(arg, "+tstat") == 0) {		// also add timed stats
          Opt_TSTAT = 1;
       } else if (strcmp(arg, "-gz") == 0) {
@@ -3974,10 +3996,10 @@ main(int argc, char *argv[])
    fprintf(Plog, "            pid = %d\n", getpid());
    fprintf(Plog, " MAX_OPEN_FILES = %d\n", MAX_OPEN_FILES);
    assert (getrlimit(RLIMIT_NOFILE, &rlimit) == 0);
-   fprintf(Plog, " RLIMIT_NOFILES = %llu\n", rlimit.rlim_cur);
+   fprintf(Plog, " RLIMIT_NOFILES = %lu\n", rlimit.rlim_cur);
    // OSX uses 0x7fffffffffffffff and Linux uses 0xffffffffffffffff - for 'unlimited'
    assert (getrlimit(RLIMIT_CORE, &rlimit) == 0);
-   sprintf(s64, "%llu", rlimit.rlim_cur);
+   sprintf(s64, "%lu", rlimit.rlim_cur);
    str = (rlimit.rlim_cur >= 0x7fffffffffffffff) ? "unlimited" : s64;
    fprintf(Plog, "   RLIMIT_CORE  = %s\n", str);
 
@@ -4141,9 +4163,9 @@ main(int argc, char *argv[])
       fprintf(Plog, "%16llu => director%s\n", GS.NDirs, (GS.NDirs != 1) ? "ies" : "y");
       fprintf(Plog, "%16llu => symlink%s\n", GS.NSymlinks, (GS.NSymlinks != 1) ? "s" : "");
       fprintf(Plog, "%16llu => other%s\n", GS.NOthers, (GS.NOthers != 1) ? "s" : "");
-      fprintf(Plog, "%16llu - byte%s logical (%4.2f GB)\n",
+      fprintf(Plog, "%16ld - byte%s logical (%4.2f GB)\n",
          GS.NBytesLogical, (GS.NBytesLogical != 1) ? "s" : "", GS.NBytesLogical / 1000000000.);
-      fprintf(Plog, "%16llu - byte%s physical (%4.2f GB)\n",
+      fprintf(Plog, "%16ld - byte%s physical (%4.2f GB)\n",
          GS.NBytesPhysical, (GS.NBytesPhysical != 1) ? "s" : "", GS.NBytesPhysical / 1000000000.);
       if (GS.NBytesLogical > 0) {	// protect divide ...
          fprintf(Plog, "%15.2f%% - overall overhead = (physical - logical) * 100 / logical\n",
@@ -4159,6 +4181,8 @@ main(int argc, char *argv[])
          fprintf(Plog, "%16llu - open() or read() error%s\n", GS.READONLY_Errors, (GS.READONLY_Errors != 1) ? "s" : "");
          if (P_CRC32)
             fprintf(Plog, "%16llu - CRC byte%s read\n", GS.READONLY_CRC_Bytes, (GS.READONLY_CRC_Bytes != 1) ? "s" : "");
+         if (P_MD5)
+            fprintf(Plog, "%16llu - MD5 byte%s read\n", GS.READONLY_MD5_Bytes, (GS.READONLY_MD5_Bytes != 1) ? "s" : "");
          if (Cmd_DENIST)
             fprintf(Plog, "%16llu - DENIST byte%s read\n", GS.READONLY_DENIST_Bytes, (GS.READONLY_DENIST_Bytes != 1) ? "s" : "");
       }

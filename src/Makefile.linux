@@ -1,10 +1,12 @@
 # libacl-devel
 
 BINDIR=../bin/linux
-// NOTE: pwalk_audit.h is a dependency, but gets conditionally #include'd inline by pwalk.c
-PWALK_C=pwalk.c pwalk_acls.c pwalk_report.c pwalk_sums.c
+# NOTE: pwalk_audit.h is a dependency, but gets conditionally #include'd inline by pwalk.c
+HASHLIB_C=hashlib/crc32.c hashlib/md5.c
+PWALK_C=pwalk.c pwalk_acls.c pwalk_report.c pwalk_sums.c $(HASHLIB_C)
 PWALK_H=pwalk.h pwalk_audit.h pwalk_onefs.h pwalk_sums.h
-PWALK_FLAGS=-lacl -lm -lrt -lpthread -g
+PWALK_LIBS=-lacl -lm -lrt -lpthread -g
+PWALK_CFLAGS=-DLINUX -DTIMESPEC_HACK
 
 all: pwalk xacls hacls chexcmp mystat pwalk_ls_cat
 
@@ -12,7 +14,7 @@ clean:
 	rm -f pwalk xacls hacls chexcmp core.*
 
 pwalk: $(PWALK_C) $(PWALK_H)
-	$(CC) -DLINUX -DTIMESPEC_HACK $(PWALK_C) -o $(BINDIR)/pwalk $(PWALK_FLAGS)
+	$(CC) $(PWALK_CFLAGS) $(PWALK_C) -o $(BINDIR)/pwalk $(PWALK_LIBS)
 
 xacls: xacls.c pwalk_acls.c pwalk_acls.h
 	$(CC) xacls.c pwalk_acls.c -o $(BINDIR)/xacls -lacl
