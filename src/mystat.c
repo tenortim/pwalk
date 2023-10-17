@@ -158,7 +158,7 @@ main(int argc, char *argv[])
       ctime_extended(&(sb.st_mtimespec), mtime_str);
       ctime_extended(&(sb.st_ctimespec), ctime_str);
       ctime_extended(&(sb.st_birthtimespec), btime_str);
-      sprintf(st_gen_str, "%d", sb.st_gen);
+      sprintf(st_gen_str, "%lu", sb.st_gen);
       sprintf(st_flags_str, "0x%X", sb.st_flags);
 #endif
 
@@ -166,8 +166,13 @@ main(int argc, char *argv[])
       printf("%s:\n", filename);
       printf("     st_mode=%07o st_nlink=%lu st_uid=%d st_gid=%d\n",
                 sb.st_mode, sb.st_nlink, sb.st_uid, sb.st_gid);
+#if defined(__LINUX__)
       printf("     st_size=%ld st_blocks=%ld st_blksize=%ld\n",
                  sb.st_size, sb.st_blocks, sb.st_blksize);
+#else
+      printf("     st_size=%ld st_blocks=%ld st_blksize=%ld\n",
+                 sb.st_size, sb.st_blocks, sb.st_blksize);
+#endif
       printf("     st_dev=%lu st_rdev=%lu st_ino=%s st_gen=%s\n",
 		sb.st_dev, sb.st_rdev, onefs_inode_str(sb.st_ino), st_gen_str);
       printf("     st_flags=%s", st_flags_str);

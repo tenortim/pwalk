@@ -7,7 +7,7 @@
 #include "md5.h"
 
 #ifndef _MSC_VER
-#include <endian.h>
+#include <sys/types.h>
 #endif
 #include <stdlib.h>
 #include <string.h>

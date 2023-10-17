@@ -8,7 +8,7 @@
 
 // big endian architectures need #define __BYTE_ORDER __BIG_ENDIAN
 #ifndef _MSC_VER
-#include <endian.h>
+#include <sys/types.h>
 #endif
 #include <stdlib.h>
 #include <string.h>

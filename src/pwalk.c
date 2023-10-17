@@ -1546,7 +1546,11 @@ printf_stat(struct stat *sb)
    printf("     st_gid=%d\n", sb->st_gid);
    printf("    st_rdev=%lu\n", sb->st_rdev);
    printf("    st_size=%ld\n", sb->st_size);
+#if defined(__LINUX__)
    printf(" st_blksize=%ld\n", sb->st_blksize);
+#else
+   printf(" st_blksize=%d\n", sb->st_blksize);
+#endif
    printf("  st_blocks=%ld\n", sb->st_blocks);
 #if !defined(__LINUX__)
    printf("   st_flags=%o\n", sb->st_flags);
@@ -3253,18 +3257,20 @@ dirent_meta_munge: // @@@
       // NOTE: ns_getacl_s will be empty string unless '+pstat' option is used
 
       // NOTE: crc_str will be empty if +crc not specified
-      int length = 0;
-      checksum_str[0] = '\0';
-      if (openit) {  // checksums only apply to files, not directories etc.
-         if (P_CRC32) {
-            length += snprintf(checksum_str + length, 1024 - length, " crc=0x%s", checksums.crc_str);
-            free(checksums.crc_str);
-            checksums.crc_str = NULL;
-         }
-         if (P_MD5) {
-            length += snprintf(checksum_str + length, 1024 - length, " md5=%s", checksums.md5_str);
-            free(checksums.md5_str);
-            checksums.md5_str = NULL;
+      {
+         int length = 0;
+         checksum_str[0] = '\0';
+         if (openit) {  // checksums only apply to files, not directories etc.
+            if (P_CRC32) {
+               length += snprintf(checksum_str + length, 1024 - length, " crc=0x%s", checksums.crc_str);
+               free(checksums.crc_str);
+               checksums.crc_str = NULL;
+            }
+            if (P_MD5) {
+               length += snprintf(checksum_str + length, 1024 - length, " md5=%s", checksums.md5_str);
+               free(checksums.md5_str);
+               checksums.md5_str = NULL;
+            }
          }
       }
 

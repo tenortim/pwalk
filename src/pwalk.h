@@ -72,7 +72,8 @@ static int CLK_TCK;
 #endif // defined(__LINUX__)
 
 #if defined(__ONEFS__)
-#define PWALK_AUDIT 1		// PWALK_AUDIT enables OneFS-only SmartLock audit functionality
+// currently unusable due to missing source file
+// #define PWALK_AUDIT 1		// PWALK_AUDIT enables OneFS-only SmartLock audit functionality
 #define USE_VTIMES 1
 #include <sys/extattr.h>
 #include <sys/isi_enc.h>	// for real lvtimes()/vtimes() (OneFS private)
